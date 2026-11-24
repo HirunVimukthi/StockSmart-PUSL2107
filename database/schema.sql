@@ -76,13 +76,3 @@ INSERT OR IGNORE INTO products (sku, name, category, stock_qty, reorder_threshol
  ('COK-330', 'Cola 330ml', 'Beverages', 72, 30, 'E-01-02', 1.49),
  ('CHP-200', 'Sea Salt Chips 200g', 'Snacks', 22, 12, 'F-04-01', 3.25),
  ('SOAP-01', 'Hand Soap 250ml', 'Household', 40, 15, 'G-02-03', 2.20);
-
-INSERT OR IGNORE INTO suppliers (id, name, contact_encrypted, email) VALUES
- (1, 'GreenFields Dairy', 'ENCRYPTED_AT_STARTUP', 'orders@greenfields.example'),
- (2, 'Harvest Bread Co.', 'ENCRYPTED_AT_STARTUP', 'supply@harvest.example'),
- (3, 'Prime Produce Wholesale', 'ENCRYPTED_AT_STARTUP', 'trade@primeproduce.example'),
- (4, 'Global Pantry Distributors', 'ENCRYPTED_AT_STARTUP', 'quotes@globalpantry.example');
-
-INSERT OR IGNORE INTO purchase_quotes (id, sku, supplier_id, requested_qty, status) VALUES
- (1, 'RCE-500', 4, 30, 'pending'),
- (2, 'EGG-012', 1, 24, 'approved');

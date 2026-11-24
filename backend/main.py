@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import bcrypt
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -20,12 +20,34 @@ SCHEMA = ROOT / "database" / "schema.sql"
 
 JWT_SECRET = os.getenv("STOCKSMART_JWT_SECRET", "stocksmart-development-secret-change-me")
 JWT_ALGORITHM = "HS256"
-FERNET_KEY = os.getenv("STOCKSMART_FERNET_KEY")
+FERNET_KEY = os.getenv("FERNET_KEY") or os.getenv("STOCKSMART_FERNET_KEY")
 if not FERNET_KEY:
     FERNET_KEY = base64.urlsafe_b64encode(
         hashlib.sha256("stocksmart-development-encryption-key".encode()).digest()
     ).decode()
 fernet = Fernet(FERNET_KEY.encode())
+
+
+def encrypt_supplier_value(value: Optional[str]) -> Optional[str]:
+    if value is None or value == "":
+        return value
+    try:
+        fernet.decrypt(value.encode())
+        return value
+    except InvalidToken:
+        return fernet.encrypt(value.encode()).decode()
+
+
+def decrypt_supplier_value(value: Optional[str]) -> Optional[str]:
+    if value is None or value == "":
+        return value
+    try:
+        return fernet.decrypt(value.encode()).decode()
+    except InvalidToken as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Supplier contact data could not be decrypted",
+        ) from error
 
 
 def get_db():
@@ -63,18 +85,78 @@ def init_database():
             (full_name, email, password_hash, role),
         )
 
-    encrypted_suppliers = [
-        ("ENCRYPTED_AT_STARTUP", "+1-555-0101"),
-        ("ENCRYPTED_AT_STARTUP", "+1-555-0102"),
-        ("ENCRYPTED_AT_STARTUP", "+1-555-0103"),
-        ("ENCRYPTED_AT_STARTUP", "+1-555-0104"),
+    seed_suppliers = [
+        (1, "GreenFields Dairy", "+1-555-0101", "orders@greenfields.example"),
+        (2, "Harvest Bread Co.", "+1-555-0102", "supply@harvest.example"),
+        (3, "Prime Produce Wholesale", "+1-555-0103", "trade@primeproduce.example"),
+        (4, "Global Pantry Distributors", "+1-555-0104", "quotes@globalpantry.example"),
     ]
-    for supplier_id, (_, contact) in enumerate(encrypted_suppliers, start=1):
-        encrypted = fernet.encrypt(contact.encode()).decode()
+    for supplier_id, name, contact, email in seed_suppliers:
+        supplier = connection.execute(
+            "SELECT contact_encrypted, email FROM suppliers WHERE id=?",
+            (supplier_id,),
+        ).fetchone()
+        if supplier is None:
+            connection.execute(
+                """
+                INSERT INTO suppliers (id, name, contact_encrypted, email)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    supplier_id,
+                    name,
+                    encrypt_supplier_value(contact),
+                    encrypt_supplier_value(email),
+                ),
+            )
+            continue
+
+        stored_contact = supplier[0]
+        if stored_contact in (None, "", "ENCRYPTED_AT_STARTUP"):
+            stored_contact = contact
+        stored_email = supplier[1] or email
         connection.execute(
-            "UPDATE suppliers SET contact_encrypted=? WHERE id=?",
-            (encrypted, supplier_id),
+            """
+            UPDATE suppliers
+            SET contact_encrypted=?, email=?
+            WHERE id=?
+            """,
+            (
+                encrypt_supplier_value(stored_contact),
+                encrypt_supplier_value(stored_email),
+                supplier_id,
+            ),
         )
+    existing_suppliers = connection.execute(
+        "SELECT id, contact_encrypted, email FROM suppliers"
+    ).fetchall()
+    for supplier in existing_suppliers:
+        connection.execute(
+            """
+            UPDATE suppliers
+            SET contact_encrypted=?, email=?
+            WHERE id=?
+            """,
+            (
+                encrypt_supplier_value(supplier[1]),
+                encrypt_supplier_value(supplier[2]),
+                supplier[0],
+            ),
+        )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO purchase_quotes
+            (id, sku, supplier_id, requested_qty, status)
+        VALUES (1, 'RCE-500', 4, 30, 'pending')
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO purchase_quotes
+            (id, sku, supplier_id, requested_qty, status)
+        VALUES (2, 'EGG-012', 1, 24, 'approved')
+        """
+    )
     connection.commit()
     connection.close()
 
@@ -180,10 +262,69 @@ def login(request: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     return {"token": token, "role": row["role"], "full_name": row["full_name"], "user_id": row["id"]}
 
 
+@app.get("/api/admin/users")
+def list_users(
+    db: sqlite3.Connection = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    rows = db.execute(
+        "SELECT id, email, role, is_locked FROM users ORDER BY id"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/admin/users/{user_id}/toggle-lock")
+def toggle_user_lock(
+    user_id: int,
+    db: sqlite3.Connection = Depends(get_db),
+    user=Depends(require_roles("admin")),
+):
+    if user["id"] == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrators cannot lock or unlock their own account",
+        )
+    target = db.execute(
+        "SELECT id, is_locked FROM users WHERE id=?",
+        (user_id,),
+    ).fetchone()
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    is_locked = 0 if target["is_locked"] == 1 else 1
+    action = "user locked" if is_locked else "user unlocked"
+    db.execute("UPDATE users SET is_locked=? WHERE id=?", (is_locked, user_id))
+    db.execute(
+        "INSERT INTO audit_logs (user_id, action, flagged_anomaly) VALUES (?, ?, 0)",
+        (user["id"], action),
+    )
+    db.commit()
+    return {"id": user_id, "is_locked": is_locked}
+
+
 @app.get("/api/products")
 def list_products(db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute("SELECT * FROM products ORDER BY category, name").fetchall()
     return [dict(row) for row in rows]
+
+
+@app.get("/api/suppliers")
+def list_suppliers(
+    db: sqlite3.Connection = Depends(get_db),
+    user=Depends(require_roles("admin", "manager")),
+):
+    rows = db.execute(
+        "SELECT id, name, contact_encrypted, email FROM suppliers ORDER BY name"
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "name": row["name"],
+            "contact": decrypt_supplier_value(row["contact_encrypted"]),
+            "email": decrypt_supplier_value(row["email"]),
+        }
+        for row in rows
+    ]
 
 
 @app.post("/api/products")
