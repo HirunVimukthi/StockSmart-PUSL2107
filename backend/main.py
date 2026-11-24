@@ -227,7 +227,7 @@ def add_or_update_product(
 def checkout(
     request: CheckoutRequest,
     db: sqlite3.Connection = Depends(get_db),
-    user=Depends(require_roles("admin", "manager", "cashier", "customer")),
+    user=Depends(require_roles("admin", "cashier")),
 ):
     if not request.items:
         raise HTTPException(status_code=400, detail="Checkout must contain at least one item")
@@ -334,7 +334,7 @@ def adjust_stock(
 @app.get("/api/quotes")
 def list_quotes(
     db: sqlite3.Connection = Depends(get_db),
-    user=Depends(require_roles("admin", "manager", "warehouse")),
+    user=Depends(require_roles("admin", "manager")),
 ):
     rows = db.execute(
         """
@@ -368,7 +368,7 @@ def approve_quote(
 @app.get("/api/security/alerts")
 def security_alerts(
     db: sqlite3.Connection = Depends(get_db),
-    user=Depends(require_roles("admin", "manager")),
+    user=Depends(require_roles("admin")),
 ):
     rows = db.execute(
         """
