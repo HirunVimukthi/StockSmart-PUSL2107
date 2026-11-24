@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StockSmart Warehouse</title><link rel="stylesheet" href="style.css"></head><body>
+<header class="topbar"><div class="brand">StockSmart</div><div><span>Warehouse</span><button class="secondary" onclick="logout()">Logout</button></div></header>
+<main class="container"><h1>Warehouse Operations</h1>
+<section class="panel"><h2>Adjust stock</h2><form id="adjust"><input id="sku" placeholder="SKU" required><input id="qty" type="number" placeholder="Quantity change (-/+) " required><button>Apply adjustment</button></form><div id="adjustStatus"></div></section>
+<section class="panel"><h2>Picking route</h2><form id="route"><input id="orderId" type="number" placeholder="Order ID" required><button>Generate route</button></form><div id="routeResult"></div></section></main>
+<script src="api.js"></script><script>
+requireRole(["warehouse"]);
+document.getElementById("adjust").onsubmit=async e=>{e.preventDefault();try{const r=await api("/api/stock/adjust",{method:"POST",body:JSON.stringify({sku:document.getElementById("sku").value,qty_change:Number(document.getElementById("qty").value),reason:"warehouse inventory adjustment"})});document.getElementById("adjustStatus").textContent=`${r.sku}: ${r.stock_qty} in stock${r.flagged_anomaly?" - anomaly flagged":""}`;}catch(err){document.getElementById("adjustStatus").textContent=err.message;}};
+document.getElementById("route").onsubmit=async e=>{e.preventDefault();try{const r=await api(`/api/orders/pick-route/${document.getElementById("orderId").value}`);document.getElementById("routeResult").innerHTML=r.route.map((x,i)=>`<p>${i+1}. ${x.shelf_location} — ${x.sku} (${x.quantity})</p>`).join("")||"No items";}catch(err){document.getElementById("routeResult").textContent=err.message;}};
+</script></body></html>
