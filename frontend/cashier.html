@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StockSmart POS</title><link rel="stylesheet" href="style.css"></head><body>
+<header class="topbar"><div class="brand">StockSmart POS</div><div><span>Cashier</span><button class="secondary" onclick="logout()">Logout</button></div></header>
+<main class="container"><h1>Checkout</h1><section class="grid"><div class="panel"><h2>Cart</h2><div id="cart"></div><button onclick="checkout()">Complete sale</button></div><div class="panel"><h2>Products</h2><div id="products"></div></div></section></main>
+<script src="api.js"></script><script>
+requireRole(["cashier"]);
+let cart=[];
+async function load(){const p=await api("/api/products");document.getElementById("products").innerHTML=p.map(x=>`<p><strong>${x.name}</strong> $${x.unit_price.toFixed(2)}<br><button onclick="add('${x.sku}')">Add</button></p>`).join("")}
+function add(sku){const item=cart.find(x=>x.sku===sku);if(item)item.quantity++;else cart.push({sku,quantity:1});render()}
+function render(){document.getElementById("cart").innerHTML=cart.length?cart.map(x=>`<p>${x.sku} × ${x.quantity}</p>`).join(""):"Cart is empty"}
+async function checkout(){if(!cart.length)return alert("Cart is empty");try{const r=await api("/api/pos/checkout",{method:"POST",body:JSON.stringify({items:cart})});alert(`Paid $${r.total_amount.toFixed(2)} — Order ${r.order_id}`);cart=[];render();}catch(e){alert(e.message)}}
+load();
+</script></body></html>

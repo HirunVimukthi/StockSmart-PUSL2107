@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StockSmart Admin</title><link rel="stylesheet" href="style.css"></head><body>
+<header class="topbar"><div class="brand">StockSmart</div><div><span>Admin</span><button class="secondary" onclick="logout()">Logout</button></div></header>
+<main class="container"><h1>Administration</h1>
+<div class="grid"><div class="card"><h3>Security alerts</h3><div id="alerts">Loading...</div></div><div class="card"><h3>Purchase quotes</h3><div id="quotes">Loading...</div></div></div>
+<section class="panel"><h2>Inventory</h2><div id="products">Loading...</div></section></main>
+<script src="api.js"></script><script>
+requireRole(["admin"]);
+Promise.all([api("/api/security/alerts"),api("/api/quotes"),api("/api/products")]).then(([alerts,quotes,products])=>{
+ document.getElementById("alerts").innerHTML=alerts.length?alerts.map(a=>`<p class="alert card">${a.action} - ${a.sku} (${a.qty_change})</p>`).join(""):"No flagged anomalies";
+ document.getElementById("quotes").innerHTML=quotes.map(q=>`<p>${q.sku}: ${q.requested_qty} - ${q.status} ${q.status==="pending"?`<button onclick="approve(${q.id})">Approve</button>`:""}</p>`).join("");
+ document.getElementById("products").innerHTML=`<table><tr><th>SKU</th><th>Name</th><th>Stock</th><th>Threshold</th><th>Location</th><th>Price</th></tr>${products.map(p=>`<tr><td>${p.sku}</td><td>${p.name}</td><td>${p.stock_qty}</td><td>${p.reorder_threshold}</td><td>${p.shelf_location}</td><td>$${p.unit_price.toFixed(2)}</td></tr>`).join("")}</table>`;
+}).catch(e=>alert(e.message));
+async function approve(id){await api(`/api/quotes/${id}/approve`,{method:"POST"});location.reload();}
+</script></body></html>

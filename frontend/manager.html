@@ -1,0 +1,12 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StockSmart Manager</title><link rel="stylesheet" href="style.css"></head><body>
+<header class="topbar"><div class="brand">StockSmart</div><div><span>Manager</span><button class="secondary" onclick="logout()">Logout</button></div></header>
+<main class="container"><h1>Manager Dashboard</h1>
+<section class="panel"><h2>Quotes</h2><div id="quotes">Loading...</div></section><section class="panel"><h2>Inventory</h2><div id="products"></div></section></main>
+<script src="api.js"></script><script>
+requireRole(["manager"]);
+Promise.all([api("/api/quotes"),api("/api/products")]).then(([quotes,products])=>{
+document.getElementById("quotes").innerHTML=quotes.map(q=>`<p>${q.sku} • ${q.requested_qty} units • ${q.status} ${q.status==="pending"?`<button onclick="approve(${q.id})">Approve</button>`:""}`).join("");
+document.getElementById("products").innerHTML=`<table><tr><th>SKU</th><th>Product</th><th>Stock</th><th>Location</th></tr>${products.map(p=>`<tr><td>${p.sku}</td><td>${p.name}</td><td>${p.stock_qty}</td><td>${p.shelf_location}</td></tr>`).join("")}</table>`;
+});
+async function approve(id){await api(`/api/quotes/${id}/approve`,{method:"POST"});location.reload();}
+</script></body></html>
