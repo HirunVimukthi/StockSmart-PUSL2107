@@ -67,13 +67,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
-INSERT OR IGNORE INTO users (id, full_name, email, password_hash, role) VALUES
- (1, 'Alice Admin', 'admin@stocksmart.local', '$2b$12$stocksmart-placeholder', 'admin'),
- (2, 'Mason Manager', 'manager@stocksmart.local', '$2b$12$stocksmart-placeholder', 'manager'),
- (3, 'Wendy Warehouse', 'warehouse@stocksmart.local', '$2b$12$stocksmart-placeholder', 'warehouse'),
- (4, 'Charlie Cashier', 'cashier@stocksmart.local', '$2b$12$stocksmart-placeholder', 'cashier'),
- (5, 'Casey Customer', 'customer@stocksmart.local', '$2b$12$stocksmart-placeholder', 'customer');
-
 INSERT OR IGNORE INTO products (sku, name, category, stock_qty, reorder_threshold, shelf_location, unit_price) VALUES
  ('MLK-001', 'Fresh Milk 1L', 'Dairy', 48, 20, 'A-01-02', 3.49),
  ('BRD-001', 'Whole Wheat Bread', 'Bakery', 35, 15, 'B-02-01', 2.99),

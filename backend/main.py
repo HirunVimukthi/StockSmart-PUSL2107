@@ -134,7 +134,7 @@ def create_token(user_id: int, role: str):
     payload = {
         "sub": str(user_id),
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=8),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -170,8 +170,10 @@ def health():
 @app.post("/api/login")
 def login(request: LoginRequest, db: sqlite3.Connection = Depends(get_db)):
     row = db.execute("SELECT * FROM users WHERE email=?", (request.email.strip().lower(),)).fetchone()
-    if not row or row["is_locked"]:
+    if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if row["is_locked"] == 1:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is locked")
     if not bcrypt.checkpw(request.password.encode(), row["password_hash"].encode()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     token = create_token(row["id"], row["role"])
