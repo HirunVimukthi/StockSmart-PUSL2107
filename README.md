@@ -42,7 +42,7 @@ StockSmart is a starter enterprise inventory, POS, purchasing, and audit applica
 
    Open `http://127.0.0.1:5500/login.html`.
 
-The backend executes `database/schema.sql` automatically when imported. Supplier contact values are encrypted with Fernet. Set `STOCKSMART_FERNET_KEY` and `STOCKSMART_JWT_SECRET` in a local `.env` or process environment for deployment.
+The backend executes `database/schema.sql` automatically when imported. Supplier phone and email values are encrypted with Fernet at rest and are returned only by the admin/manager-protected `GET /api/suppliers` endpoint. Set `FERNET_KEY` and `STOCKSMART_JWT_SECRET` in a local `.env` or process environment for deployment; `STOCKSMART_FERNET_KEY` remains a supported alias. The fallback Fernet key is for development only.
 
 ## Test accounts
 
@@ -72,3 +72,6 @@ py ai_engine/forecast.py
 - `GET /api/quotes`
 - `POST /api/quotes/{id}/approve`
 - `GET /api/security/alerts`
+- `GET /api/suppliers` (admin/manager)
+- `GET /api/admin/users` (admin)
+- `POST /api/admin/users/{user_id}/toggle-lock` (admin)
