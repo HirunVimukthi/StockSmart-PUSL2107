@@ -211,6 +211,15 @@ class QuoteRequest(BaseModel):
     supplier_id: int
     requested_qty: int = Field(gt=0)
 
+class OrderCreateRequest(BaseModel):
+    customer_id: Optional[int] = None
+    order_type: str = "online"
+    items: list[CheckoutItem]
+
+
+class OrderStatusUpdateRequest(BaseModel):
+    status: str
+
 
 def create_token(user_id: int, role: str):
     payload = {
@@ -449,6 +458,118 @@ def pick_route(
         "route": [dict(row) for row in rows],
     }
 
+VALID_ORDER_STATUSES = {"pending", "paid", "picking", "packed", "dispatched", "delivered", "cancelled"}
+
+
+@app.post("/api/orders", status_code=status.HTTP_201_CREATED)
+def create_order(
+    request: OrderCreateRequest,
+    db: sqlite3.Connection = Depends(get_db),
+    user=Depends(require_roles("admin", "manager", "warehouse", "cashier", "customer")),
+):
+    if not request.items:
+        raise HTTPException(status_code=400, detail="Order must contain at least one item")
+
+    customer_id = user["id"] if user["role"] == "customer" else request.customer_id
+    total = 0.0
+    checked_items = []
+
+    for item in request.items:
+        product = db.execute("SELECT * FROM products WHERE sku=?", (item.sku.upper(),)).fetchone()
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Unknown SKU: {item.sku}")
+        if product["stock_qty"] < item.quantity:
+            raise HTTPException(status_code=400, detail=f"Insufficient stock for {item.sku}")
+        total += product["unit_price"] * item.quantity
+        checked_items.append((product, item.quantity))
+
+    cursor = db.execute(
+        "INSERT INTO orders (customer_id, order_type, status, total_amount) VALUES (?, ?, 'pending', ?)",
+        (customer_id, request.order_type.strip().lower(), total),
+    )
+    order_id = cursor.lastrowid
+
+    for product, quantity in checked_items:
+        db.execute(
+            "INSERT INTO order_items (order_id, sku, quantity) VALUES (?, ?, ?)",
+            (order_id, product["sku"], quantity),
+        )
+        new_stock = product["stock_qty"] - quantity
+        db.execute("UPDATE products SET stock_qty=? WHERE sku=?", (new_stock, product["sku"]))
+        db.execute(
+            "INSERT INTO audit_logs (user_id, action, sku, qty_change, flagged_anomaly) VALUES (?, 'order created', ?, ?, 0)",
+            (user["id"], product["sku"], -quantity),
+        )
+        if new_stock < product["reorder_threshold"]:
+            supplier = db.execute("SELECT id FROM suppliers ORDER BY id LIMIT 1").fetchone()
+            if supplier:
+                db.execute(
+                    """
+                    INSERT INTO purchase_quotes (sku, supplier_id, requested_qty, status)
+                    SELECT ?, ?, ?, 'pending'
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM purchase_quotes
+                        WHERE sku=? AND status='pending'
+                    )
+                    """,
+                    (
+                        product["sku"],
+                        supplier["id"],
+                        max(product["reorder_threshold"] * 2 - new_stock, 1),
+                        product["sku"],
+                    ),
+                )
+
+    db.commit()
+    return {
+        "order_id": order_id,
+        "customer_id": customer_id,
+        "order_type": request.order_type.strip().lower(),
+        "status": "pending",
+        "total_amount": round(total, 2),
+    }
+
+
+@app.get("/api/orders")
+def list_orders(
+    db: sqlite3.Connection = Depends(get_db),
+    user=Depends(require_roles("admin", "manager", "warehouse", "cashier", "customer")),
+):
+    if user["role"] == "customer":
+        rows = db.execute(
+            "SELECT * FROM orders WHERE customer_id=? ORDER BY id DESC",
+            (user["id"],),
+        ).fetchall()
+    else:
+        rows = db.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.patch("/api/orders/{order_id}/status")
+def update_order_status(
+    order_id: int,
+    request: OrderStatusUpdateRequest,
+    db: sqlite3.Connection = Depends(get_db),
+    user=Depends(require_roles("admin", "manager", "warehouse")),
+):
+    new_status = request.status.strip().lower()
+    if new_status not in VALID_ORDER_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Allowed: {', '.join(sorted(VALID_ORDER_STATUSES))}",
+        )
+
+    order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    db.execute("UPDATE orders SET status=? WHERE id=?", (new_status, order_id))
+    db.execute(
+        "INSERT INTO audit_logs (user_id, action, flagged_anomaly) VALUES (?, ?, 0)",
+        (user["id"], f"order #{order_id} status -> {new_status}"),
+    )
+    db.commit()
+    return {"order_id": order_id, "status": new_status}
 
 @app.post("/api/stock/adjust")
 def adjust_stock(
