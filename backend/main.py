@@ -18,6 +18,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DATABASE = ROOT / "stocksmart.db"
 SCHEMA = ROOT / "database" / "schema.sql"
 
+import sys
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from ai_engine.routing import calculate_s_shape_route
+
 JWT_SECRET = os.getenv("STOCKSMART_JWT_SECRET", "stocksmart-development-secret-change-me")
 JWT_ALGORITHM = "HS256"
 FERNET_KEY = os.getenv("FERNET_KEY") or os.getenv("STOCKSMART_FERNET_KEY")
@@ -448,17 +454,15 @@ def pick_route(
         FROM order_items oi
         JOIN products p ON p.sku=oi.sku
         WHERE oi.order_id=?
-        ORDER BY p.shelf_location ASC, oi.sku ASC
         """,
         (order_id,),
     ).fetchall()
+    optimized = calculate_s_shape_route([dict(row) for row in rows])
     return {
         "order_id": order_id,
         "status": order["status"],
-        "route": [dict(row) for row in rows],
+        **optimized,
     }
-
-VALID_ORDER_STATUSES = {"pending", "paid", "picking", "packed", "dispatched", "delivered", "cancelled"}
 
 
 @app.post("/api/orders", status_code=status.HTTP_201_CREATED)

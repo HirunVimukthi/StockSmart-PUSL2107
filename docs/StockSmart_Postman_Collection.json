@@ -91,7 +91,7 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "http://127.0.0.1:8001/api/orders/pick-route/1",
+          "raw": "http://127.0.0.1:8001/api/orders/pick-route/2",
           "protocol": "http",
           "host": [
             "127",
@@ -104,7 +104,7 @@
             "api",
             "orders",
             "pick-route",
-            "1"
+            "2"
           ]
         }
       },
@@ -262,7 +262,7 @@
     "bearer": [
       {
         "key": "token",
-        "value": "{{json_web_token_0q6o}}",
+        "value": "{{json_web_token_0kdv}}",
         "type": "string"
       }
     ]
@@ -270,6 +270,14 @@
   "variable": [
     {
       "key": "json_web_token_0q6o",
+      "secret": true
+    },
+    {
+      "key": "json_web_token_0kdv",
+      "secret": true
+    },
+    {
+      "key": "json_web_token_0kdv",
       "secret": true
     }
   ]
